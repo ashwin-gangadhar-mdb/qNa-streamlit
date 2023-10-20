@@ -46,19 +46,19 @@ PROMPT = PromptTemplate(template="""
 
 
 def check_doc_in_mdb(md5):
-    if len(list(db["chatverify_new"].find({"md5": md5}))) > 0:
+    if len(list(db["chatverify"].find({"md5": md5}))) > 0:
         return True
     else:
-        db["chatverify_new"].insert_one({"md5": md5})
+        db["chatverify"].insert_one({"md5": md5})
         return False
 
 
 def get_pdf_data(pdf):
     text = ""
     pdf_reader = PdfReader(pdf)
-    md5 = one_way_hash(text)
     for page in pdf_reader.pages:
         text += page.extract_text()
+        md5 = one_way_hash(text)
         print(">>>>>>>>>>>>>>")
         print(md5)
     if check_doc_in_mdb(md5):
