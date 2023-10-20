@@ -5,10 +5,10 @@ from PyPDF2 import PdfReader
 
 from langchain.llms import LlamaCpp, VertexAI
 # Todo change to Vertex AI
-from langchain.chat_models import ChatVertexAI,ChatOpenAI
+from langchain.chat_models import ChatVertexAI, ChatOpenAI
 from langchain.vectorstores import MongoDBAtlasVectorSearch
-from langchain.text_splitter import  CharacterTextSplitter
-from langchain.chains import  ConversationalRetrievalChain
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory, ConversationBufferWindowMemory
 from langchain.embeddings import VertexAIEmbeddings
 from InstructorEmbedding import INSTRUCTOR
@@ -29,7 +29,7 @@ load_dotenv()
 
 os.environ["SENTENCE_TRANSFORMERS_HOME"] = "tmp/st/"
 
-client = MongoClient(os.environ["MONGO_CONNECTION_STR"],tlsCAFile=certifi.where())
+client = MongoClient(os.environ["MONGO_CONNECTION_STR"], tlsCAFile=certifi.where())
 db = client["sample"]
 
 one_way_hash = lambda x: hashlib.md5(x.encode("utf-8")).hexdigest()
@@ -37,22 +37,21 @@ one_way_hash = lambda x: hashlib.md5(x.encode("utf-8")).hexdigest()
 CHAT_VERIFY_COL = "chatverify_new"
 CHAT_APP_COL = "chatapp_new"
 
-
 PROMPT = PromptTemplate(template="""
        Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer.
        {context}
        ##Question:{question} \n\
        ## Chat History: {chat_history}
-       ##AI Assistant Response:\n""",input_variables=["context","chat_history","question"])
+       ##AI Assistant Response:\n""", input_variables=["context", "chat_history", "question"])
+
 
 def check_doc_in_mdb(md5):
-    if len(list(db[CHAT_VERIFY_COL].find({"md5": md5}))) > 0:
+    if len(list(db["chatverify_new"].find({"md5": md5}))) > 0:
         return True
     else:
+        db["chatverify_new"].insert_one({"md5": md5})
         return False
-    
-def insert_doc_verify_mdb(md5):
-    db[CHAT_VERIFY_COL].insert_one({"md5": md5})
+
 
 def get_pdf_data(pdf):
     text = ""
@@ -60,10 +59,12 @@ def get_pdf_data(pdf):
     md5 = one_way_hash(text)
     for page in pdf_reader.pages:
         text += page.extract_text()
+        print(">>>>>>>>>>>>>>")
+        print(md5)
     if check_doc_in_mdb(md5):
         return None, None
     else:
-        return text,md5
+        return text, md5
 
 
 def get_text_chunks(text):
@@ -81,6 +82,7 @@ def get_embeddings_transformer():
     embeddings = VertexAIEmbeddings()
     return embeddings
 
+
 # def get_embeddings_transformer():
 #     return HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-base")
 
@@ -90,6 +92,7 @@ def get_vector_store():
     vs = MongoDBAtlasVectorSearch(collection=col, embedding=get_embeddings_transformer(), index_name="default",
                                   embedding_key="vec", text_key="line")
     return vs
+
 
 @lru_cache(maxsize=1)
 def get_conversation_chain():
@@ -110,6 +113,7 @@ def get_conversation_chain():
     # )
     return conversation_chain
 
+
 def handle_userinput(user_question):
     conv = get_conversation_chain()
     response = conv({'question': user_question, "chat_history": st.session_state.chat_history})
@@ -128,11 +132,10 @@ def handle_userinput(user_question):
         #         st.markdown(message.content)
 
 
-
 def main():
     st.set_page_config(page_title="Chat with multiple PDFs",
                        page_icon=":books:")
-    
+
     st.markdown(
         """<img src="https://lh3.googleusercontent.com/I2_PSO0vMM8kLJxJ-OUIqtSBo3krzhmctqIkFv8Exgchm5X04h_MysTSB-8mELD6J_OIA1N2ExP_=e14-rj-sc0xffffff-h338-w600" class=" css-1lo3ubz" alt="MongoDB logo" style="height:200px;width:340px;align:center"> """,
         unsafe_allow_html=True)
@@ -169,24 +172,26 @@ def main():
             with st.spinner("Processing"):
                 # get pdf text
                 raw_text, md5 = get_pdf_data(pdf)
-
+                print(">>>>>>>>>>>>")
+                print(raw_text)
+                print(md5)
                 if raw_text:
                     # get the text chunks
                     text_chunks = get_text_chunks(raw_text)
-                    if len(text_chunks)>1000:
+                    if len(text_chunks) > 1000:
                         split = 100
                     else:
                         split = 10
                     for i in range(0, len(text_chunks), split):
-                        batch_chunks = text_chunks[i:(i + split-1)]
+                        batch_chunks = text_chunks[i:(i + split - 1)]
                         vs.add_texts(batch_chunks)
-                # insert to md5 once indexed
-                insert_doc_verify_mdb(md5)
-            
+
             st.write('Document added successfully')
-        st.write('Made with ❤️ by [Ashwin Gangadhar](linkedin.com/in/ashwin-gangadhar-00b17046) and [Venkatesh Shanbhag](https://www.linkedin.com/in/venkatesh-shanbhag/)')
+        st.write(
+            'Made with ❤️ by [Ashwin Gangadhar](linkedin.com/in/ashwin-gangadhar-00b17046) and [Venkatesh Shanbhag](https://www.linkedin.com/in/venkatesh-shanbhag/)')
 
     add_vertical_space(5)
+
 
 if __name__ == "__main__":
     main()
