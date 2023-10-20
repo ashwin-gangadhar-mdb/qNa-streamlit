@@ -46,11 +46,13 @@ PROMPT = PromptTemplate(template="""
 
 
 def check_doc_in_mdb(md5):
-    if len(list(db["chatverify"].find({"md5": md5}))) > 0:
+    if len(list(db[CHAT_VERIFY_COL].find({"md5": md5}))) > 0:
         return True
     else:
-        db["chatverify"].insert_one({"md5": md5})
         return False
+    
+def insert_doc_verify_mdb(md5):
+    db[CHAT_VERIFY_COL].insert_one({"md5": md5})
 
 
 def get_pdf_data(pdf):
@@ -58,9 +60,9 @@ def get_pdf_data(pdf):
     pdf_reader = PdfReader(pdf)
     for page in pdf_reader.pages:
         text += page.extract_text()
-        md5 = one_way_hash(text)
-        print(">>>>>>>>>>>>>>")
-        print(md5)
+    md5 = one_way_hash(text)
+    print(">>>>>>>>>>>>>>")
+    print(md5)
     if check_doc_in_mdb(md5):
         return None, None
     else:
@@ -132,18 +134,22 @@ def handle_userinput(user_question):
         #         st.markdown(message.content)
 
 
-def main():
-    st.set_page_config(page_title="Chat with multiple PDFs",
-                       page_icon=":books:")
-
+st.set_page_config(page_title="Chat with multiple PDFs",
+                    page_icon=":books:")
+st.session_state.vectorstore = get_vector_store()
+st.session_state.conv = get_conversation_chain()
+tab1, tab2 = st.tabs(["Q & A", "ADD document"])
+with tab1:        
     st.markdown(
         """<img src="https://lh3.googleusercontent.com/I2_PSO0vMM8kLJxJ-OUIqtSBo3krzhmctqIkFv8Exgchm5X04h_MysTSB-8mELD6J_OIA1N2ExP_=e14-rj-sc0xffffff-h338-w600" class=" css-1lo3ubz" alt="MongoDB logo" style="height:200px;width:340px;align:center"> """,
         unsafe_allow_html=True)
     # st.title("""Assistant for any source powered by Atlas Vector Search and VertexAI""")
 
+    chat_history_clear = st.button("Clear Chat History")
+
     if "conversation" not in st.session_state:
         st.session_state.conversation = None
-    if "chat_history" not in st.session_state:
+    if ("chat_history" not in st.session_state) or chat_history_clear:
         st.session_state.chat_history = []
 
     st.header("Assistant for any source powered by MongoDB Atlas Vector Search and VertexAI")
@@ -152,9 +158,33 @@ def main():
         print(">>>>>>>>>>>>>>>")
         handle_userinput(user_question)
 
-    # st.session_state.conversation = get_conversation_chain(get_vector_store())
+
+with tab2:
+    st.subheader("Your documents")
+    pdf = st.file_uploader(
+        "Upload your PDFs here and click on 'Process'", accept_multiple_files=False)
+    b = st.button("Process")
+    if b:
+        vs = st.session_state.vectorstore
+        with st.spinner("Processing"):
+            # get pdf text
+            raw_text, md5 = get_pdf_data(pdf)
+            if raw_text:
+                # get the text chunks
+                text_chunks = get_text_chunks(raw_text)
+                if len(text_chunks)>500:
+                    split = 100
+                else:
+                    split = 10
+                for i in range(0, len(text_chunks), split):
+                    batch_chunks = text_chunks[i:(i + split-1)]
+                    vs.add_texts(batch_chunks)
+                # insert to md5 once indexed
+                insert_doc_verify_mdb(md5)
+                st.write('Document added successfully')
 
     with st.sidebar:
+        add_vertical_space(3)
         st.title("Process your PDFs and perform vector search")
         st.markdown('''
         ## About
@@ -163,35 +193,5 @@ def main():
         - [LangChain](https://python.langchain.com/)
         - [MongoDB Vector Search](https://www.mongodb.com/products/platform/atlas-vector-search)
         ''')
-        add_vertical_space(3)
-        st.subheader("Your documents")
-        pdf = st.file_uploader(
-            "Upload your PDFs here and click on 'Process'", accept_multiple_files=False)
-        if st.button("Process"):
-            vs = get_vector_store()
-            with st.spinner("Processing"):
-                # get pdf text
-                raw_text, md5 = get_pdf_data(pdf)
-                print(">>>>>>>>>>>>")
-                print(raw_text)
-                print(md5)
-                if raw_text:
-                    # get the text chunks
-                    text_chunks = get_text_chunks(raw_text)
-                    if len(text_chunks) > 1000:
-                        split = 100
-                    else:
-                        split = 10
-                    for i in range(0, len(text_chunks), split):
-                        batch_chunks = text_chunks[i:(i + split - 1)]
-                        vs.add_texts(batch_chunks)
-
-            st.write('Document added successfully')
-        st.write(
-            'Made with ❤️ by [Ashwin Gangadhar](linkedin.com/in/ashwin-gangadhar-00b17046) and [Venkatesh Shanbhag](https://www.linkedin.com/in/venkatesh-shanbhag/)')
-
-    add_vertical_space(5)
-
-
-if __name__ == "__main__":
-    main()
+        add_vertical_space(5)
+        st.write('Made with ❤️ by [Ashwin Gangadhar](linkedin.com/in/ashwin-gangadhar-00b17046) and [Venkatesh Shanbhag](https://www.linkedin.com/in/venkatesh-shanbhag/)')
