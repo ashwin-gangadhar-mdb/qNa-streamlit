@@ -13,6 +13,7 @@ from langchain.memory import ConversationBufferMemory, ConversationBufferWindowM
 from langchain.embeddings import VertexAIEmbeddings
 from InstructorEmbedding import INSTRUCTOR
 from langchain.embeddings import HuggingFaceInstructEmbeddings, HuggingFaceEmbeddings
+from langchain.prompts import PromptTemplate
 
 import hashlib
 from tqdm import tqdm
@@ -22,17 +23,27 @@ from pymongo import MongoClient
 import certifi
 
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 os.environ["SENTENCE_TRANSFORMERS_HOME"] = "tmp/st/"
 
-client = MongoClient("mongodb+srv://ashwin:pswd123ash@retail-demo.2wqno.mongodb.net/?retryWrites=true&w=majority",
-                     tlsCAFile=certifi.where())
+client = MongoClient(os.environ["MONGO_CONNECTION_STR"],tlsCAFile=certifi.where())
 db = client["sample"]
 
 one_way_hash = lambda x: hashlib.md5(x.encode("utf-8")).hexdigest()
 
 CHAT_VERIFY_COL = "chatverify_new"
 CHAT_APP_COL = "chatapp_new"
+
+
+PROMPT = PromptTemplate(template="""
+       Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer.
+       {context}
+       ##Question:{question} \n\
+       ## Chat History: {chat_history}
+       ##AI Assistant Response:\n""",input_variables=["context","chat_history","question"])
 
 def check_doc_in_mdb(md5):
     if len(list(db[CHAT_VERIFY_COL].find({"md5": md5}))) > 0:
@@ -83,14 +94,20 @@ def get_vector_store():
 @lru_cache(maxsize=1)
 def get_conversation_chain():
     llm = ChatVertexAI()
-    # llm = ChatOpenAI()
+    # llm = ChatOpenAI(model="gpt-3.5-turbo")
     retriever = get_vector_store().as_retriever(search_type="mmr", search_kwargs={'k': 10, 'lambda_mult': 0.25})
     memory = ConversationBufferWindowMemory(memory_key='chat_history', k=5, return_messages=True)
     conversation_chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=retriever,
-        memory=memory
+        memory=memory,
+        combine_docs_chain_kwargs={"prompt": PROMPT}
     )
+    # conversation_chain = ConversationalRetrievalChain.from_llm(
+    #     llm=llm,
+    #     retriever=retriever,
+    #     memory=memory
+    # )
     return conversation_chain
 
 def handle_userinput(user_question):
