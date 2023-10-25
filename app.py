@@ -30,12 +30,12 @@ load_dotenv()
 os.environ["SENTENCE_TRANSFORMERS_HOME"] = "tmp/st/"
 
 client = MongoClient(os.environ["MONGO_CONNECTION_STR"], tlsCAFile=certifi.where())
-db = client["sample"]
+db = client[os.environ["MONGO_COLLECTION_NAME"]]
 
 one_way_hash = lambda x: hashlib.md5(x.encode("utf-8")).hexdigest()
 
-CHAT_VERIFY_COL = "chatverify_new"
-CHAT_APP_COL = "chatapp_new"
+CHAT_VERIFY_COL = os.environ["CHAT_VERIFY_COL"]
+CHAT_APP_COL = os.environ["CHAT_APP_COL"]
 
 PROMPT = PromptTemplate(template="""
        Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer.
@@ -85,9 +85,6 @@ def get_embeddings_transformer():
     return embeddings
 
 
-# def get_embeddings_transformer():
-#     return HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-base")
-
 @lru_cache(maxsize=1)
 def get_vector_store():
     col = db[CHAT_APP_COL]
@@ -99,7 +96,6 @@ def get_vector_store():
 @lru_cache(maxsize=1)
 def get_conversation_chain():
     llm = ChatVertexAI()
-    # llm = ChatOpenAI(model="gpt-3.5-turbo")
     retriever = get_vector_store().as_retriever(search_type="mmr", search_kwargs={'k': 10, 'lambda_mult': 0.25})
     memory = ConversationBufferWindowMemory(memory_key='chat_history', k=5, return_messages=True)
     conversation_chain = ConversationalRetrievalChain.from_llm(
@@ -108,11 +104,7 @@ def get_conversation_chain():
         memory=memory,
         combine_docs_chain_kwargs={"prompt": PROMPT}
     )
-    # conversation_chain = ConversationalRetrievalChain.from_llm(
-    #     llm=llm,
-    #     retriever=retriever,
-    #     memory=memory
-    # )
+
     return conversation_chain
 
 
@@ -126,12 +118,6 @@ def handle_userinput(user_question):
             st.markdown(message["user"])
         with st.chat_message("assistant"):
             st.markdown(message["assistant"])
-        # if i % 2 == 0:
-        #     with st.chat_message("user"):
-        #         st.markdown(message)
-        # else:
-        #     with st.chat_message("assistant"):
-        #         st.markdown(message.content)
 
 
 st.set_page_config(page_title="Chat with multiple PDFs",
@@ -155,7 +141,6 @@ with tab1:
     st.header("Assistant for any source powered by MongoDB Atlas Vector Search and VertexAI")
     user_question = st.text_input("Ask a question about your documents:")
     if user_question:
-        print(">>>>>>>>>>>>>>>")
         handle_userinput(user_question)
 
 
@@ -188,10 +173,11 @@ with tab2:
         st.title("Process your PDFs and perform vector search")
         st.markdown('''
         ## About
-        This app is an LLM-powered chatbot built using:
+        This app is a Google VertexAI PAML-powered chatbot built using:
         - [Streamlit](https://streamlit.io/)
+        - [Google VertexAI](https://cloud.google.com/vertex-ai/docs)
         - [LangChain](https://python.langchain.com/)
-        - [MongoDB Vector Search](https://www.mongodb.com/products/platform/atlas-vector-search)
+        - [MongoDB Atlas Vector Search](https://www.mongodb.com/products/platform/atlas-vector-search)
         ''')
         add_vertical_space(5)
         st.write('Made with ❤️ by [Ashwin Gangadhar](linkedin.com/in/ashwin-gangadhar-00b17046) and [Venkatesh Shanbhag](https://www.linkedin.com/in/venkatesh-shanbhag/)')
